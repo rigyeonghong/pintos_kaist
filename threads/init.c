@@ -235,6 +235,7 @@ parse_options (char **argv) {
 }
 
 /* Runs the task specified in ARGV[1]. */
+/* 유저 프로세스를 실행될 수 있도록 프로세스 생성을 시작하고 프로세스 종료를 대기 */
 static void
 run_task (char **argv) {
 	const char *task = argv[1];
@@ -264,6 +265,7 @@ run_actions (char **argv) {
 	};
 
 	/* Table of supported actions. */
+	/* run옵션(응용프로그램 실행)일 경우 run_task() 호출*/
 	static const struct action actions[] = {
 		{"run", 2, run_task},
 #ifdef FILESYS

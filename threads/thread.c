@@ -1,3 +1,4 @@
+// #define USERPROG
 #include "threads/thread.h"
 #include <debug.h>
 #include <stddef.h>
@@ -66,6 +67,12 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+
+// struct kernel_thread_frame {
+//     uintptr_t rip;
+//     uint64_t function;
+//     uint64_t aux;
+// };
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -181,25 +188,33 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
+/* 쓰레드 생성 후 run queue에 추가 */
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
 	struct thread *t;
+	// struct kernel_thread_frame *kf;
 	tid_t tid;
 
 	ASSERT (function != NULL);
 
-	/* Allocate thread. */
+	/* 페이지 할당 */
 	t = palloc_get_page (PAL_ZERO);
 	if (t == NULL)
 		return TID_ERROR;
 
-	/* Initialize thread. */
+	/* thread 구조체 초기화 */
 	init_thread (t, name, priority);
-	tid = t->tid = allocate_tid ();
+	tid = t->tid = allocate_tid ();	/* tid 할당 */
+
+	// kf = alloc_frame (t, sizeof kf);/* 커널 스택 할당 */
+	// kf->rip = NULL;
+	// kf->function = function; /* 스레드가 수행할 함수 */
+	// kf->aux = aux;			/* 수행할 함수의 인자 */
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
+	/* 스케줄된 경우 kernel_thread 호출 */
 	t->tf.rip = (uintptr_t) kernel_thread;
 	t->tf.R.rdi = (uint64_t) function;
 	t->tf.R.rsi = (uint64_t) aux;
@@ -284,6 +299,8 @@ thread_tid (void) {
 
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
+/* 현재 스레드의 예약을 취소하고 삭제 
+   호출자에게 다시 돌아오지 않음 */
 void
 thread_exit (void) {
 	ASSERT (!intr_context ());
@@ -295,6 +312,8 @@ thread_exit (void) {
 	/* Just set our status to dying and schedule another process.
 	   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
+	list_remove (&thread_current()->allelem); 
+	// thread_current ()->status = THREAD_DYING;
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
 }
@@ -445,7 +464,7 @@ void remove_with_lock(struct lock *lock){
 	for (e=list_begin(&cur->donations); e!=list_end(&cur->donations); e=list_next(e)){
 		struct thread *t = list_entry(e, struct thread, donation_elem); /* elme -> donation_elem 으로 체인지 후 pass tests/threads/priority-donate-one*/
 		if(t->wait_on_lock == lock){		/* 해지할 lock을 보유하고 있으면 */
-			list_remove(&t->donation_elem);		/* 보유하고 있는 엔트리를 삭제 - list_remove dont do that 해결 */ 
+			list_remove(&t->donation_elem);	/* 보유하고 있는 엔트리를 삭제 - list_remove dont do that 해결 */ 
 		}
 	}
 }
@@ -505,6 +524,15 @@ thread_get_recent_cpu (void) {
    blocks.  After that, the idle thread never appears in the
    ready list.  It is returned by next_thread_to_run() as a
    special case when the ready list is empty. */
+/* 유휴 스레드.
+   실행할 준비가 된 다른 스레드가 없을 때 실행	.
+   유휴 스레드는 처음에 thread_start()에 의해 준비 목록에 표시.
+   처음에 한 번 예약되며, 이 시점에서 idle_thread를 초기화하고
+	thread_start()가 계속될 수 있도록 전달된 세마포를 "업"한 후 즉시 차단.
+
+	그 후 유휴 스레드는 준비 목록에 나타나지 않음.
+	준비 목록이 비어 있는 경우 next_thread_to_run()에서 특별한 경우로 반환
+	*/
 static void
 idle (void *idle_started_ UNUSED) {
 	struct semaphore *idle_started = idle_started_;
@@ -534,6 +562,7 @@ idle (void *idle_started_ UNUSED) {
 }
 
 /* Function used as the basis for a kernel thread. */
+/* 커널 스레드의 기본으로 사용되는 함수 */
 static void
 kernel_thread (thread_func *function, void *aux) {
 	ASSERT (function != NULL);

@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/pagedir.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -22,10 +23,15 @@
 #include "vm/vm.h"
 #endif
 
+#define DELIM " "
+
+
 static void process_cleanup (void);
-static bool load (const char *file_name, struct intr_frame *if_);
+static bool load (const char *file_name, void (**rip)(void), void **rsp);
 static void initd (void *f_name);
 static void __do_fork (void *);
+static void start_process (void *file_name_);	/* 메모리 적재 성공 시 응용 프로그램 실행, 실패 시 스레드 종료 */
+void argument_stack(char **parse ,int count ,void **esp); /* 유저 스택에 프로그램 이름과 인자들을 저장하는 함수 */
 
 /* General process initializer for initd and other process. */
 static void
@@ -40,24 +46,28 @@ process_init (void) {
  * Notice that THIS SHOULD BE CALLED ONCE. */
 tid_t
 process_create_initd (const char *file_name) {
-	char *fn_copy;
+	char *fn_copy;	/* start_process 함수를 수행할 때 사용하는 인자 값 */
 	tid_t tid;
+	char *f_name;
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
 	fn_copy = palloc_get_page (0);
 	if (fn_copy == NULL)
 		return TID_ERROR;
-	strlcpy (fn_copy, file_name, PGSIZE);
+	// strlcpy (fn_copy, file_name, PGSIZE);
+	f_name = strtok_r(file_name, DELIM, &fn_copy);
 
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	/* 프로그램을 실행할 스레드 생성 */
+	tid = thread_create (f_name, PRI_DEFAULT, start_process, file_name);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
 }
 
 /* A thread function that launches first user process. */
+/* 첫 번째 user process를 시작하는 스레드 기능 */
 static void
 initd (void *f_name) {
 #ifdef VM
@@ -177,7 +187,7 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load (file_name, &_if.rip, &_if.rsp);
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
@@ -189,6 +199,82 @@ process_exec (void *f_name) {
 	NOT_REACHED ();
 }
 
+void argument_stack(char **parse ,int count ,void **rsp){
+	int i, j;
+	char *addr_ptr;
+	/* 프로그램 이름 및 인자(문자열) push */
+
+	addr_ptr = *rsp;
+	for(i = count - 1 ; i > -1 ; i--) {
+		for(j = strlen(parse[i]) ; j > -1 ; j--) {
+			*rsp = *rsp - 1;
+			**(char **)rsp = parse[i][j];
+		}
+	}
+	
+	// word-align
+	if(count%2){ // 홀수
+		*rsp = *rsp - 1;
+		**(char **)rsp = NULL;
+	}
+	// argv[count] = argv[argc]
+	*rsp = *rsp - 1;
+	**(char **)rsp = NULL;
+
+	/* 프로그램 이름 및 인자 주소들 push */
+	for(i = count - 1 ; i > -1 ; i--) {
+		*rsp = *rsp - 1;
+		**(char **)rsp = *addr_ptr;
+		*addr_ptr = *addr_ptr - 1;
+	}
+
+	*addr_ptr = *rsp;
+	/* argv (문자열을 가리키는 주소들의 배열을 가리킴) push*/ 
+	*rsp = *rsp - 1;
+	**(char **)rsp = *addr_ptr ;
+	/* argc (문자열의 개수 저장) push */
+	*rsp = *rsp - 1;
+	**(char **)rsp = count;
+	/* fake address(0) 저장 */
+	*rsp = *rsp - 1;
+	**(char **)rsp = (void*)0;	/* 악깡버 */
+}
+
+
+/* 메모리 적재 성공 시 응용 프로그램 실행, 실패 시 스레드 종료 */
+static void start_process (void *file_name_) {
+	char *file_name = file_name_;
+	struct intr_frame if_;
+    bool success;
+	char *ret_ptr;
+    char *next_ptr;
+	int cnt = 1;
+
+	// 2번째 인자부터 file_name_에 있는 거 또 쪼개기
+	/* 인자들을 띄어쓰기 기준으로 토큰화 및 토큰의 개수 계산 (strtok_r() 함수 이용) */
+	ret_ptr = strtok_r(file_name, DELIM, &next_ptr);
+	while(ret_ptr) {
+		ret_ptr = strtok_r(NULL, DELIM, &next_ptr);
+		cnt ++;
+	}
+	
+	/* 유저 스택에 프로그램 이름과 인자들을 저장하는 함수 */
+	argument_stack(file_name, cnt, if_.rsp);
+	hex_dump(if_.rsp , if_.rsp , PHYS_BASE – if_.rsp , true);
+
+	/* Initialize interrupt frame and load executable. */
+	memset (&if_, 0, sizeof if_);
+
+	/* if_.rsp는 스택 포인터 */
+	success = load(file_name, &if_.rip, &if_.rsp); /* file_name의 프로그램을 메모리에 적재 */
+	if (!success)
+		thread_exit ();
+	/* start user program */
+	// asm volatile ("movq %0, %%rsp; jmp intr_exit" : : "g" (&if_) : "memory");
+	NOT_REACHED();
+}
+
+
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -199,6 +285,7 @@ process_exec (void *f_name) {
  *
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
+/* 자식 프로세스 종료 때까지 대기 */
 int
 process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
@@ -283,18 +370,21 @@ struct ELF64_hdr {
 	uint16_t e_type;
 	uint16_t e_machine;
 	uint32_t e_version;
-	uint64_t e_entry;
-	uint64_t e_phoff;
+	uint64_t e_entry;		/* 시스템이 실행하기 위해 제어를 옮길 때 참조하는 가상주소(진입점) -> 프로그램 시작 주소(main)을 찾을 수 있음 */
+	uint64_t e_phoff;		/* 여기 저장된 offset부터 시작 */
 	uint64_t e_shoff;
-	uint32_t e_flags;
+	uint32_t e_flags;		
 	uint16_t e_ehsize;
-	uint16_t e_phentsize;
-	uint16_t e_phnum;
+	uint16_t e_phentsize;	/* program header 크기 */
+	uint16_t e_phnum;		/* program header table에는 program header가 e_phnum만큼 들어있음 */
 	uint16_t e_shentsize;
 	uint16_t e_shnum;
 	uint16_t e_shstrndx;
 };
 
+/* 실행 가능한(또는 공유된) object file의 프로그램 헤더 테이블은 
+   시스템이 프로그램을 실행을 위해 필요로하는 각각의 세그먼트나 
+   다른 정보들을 담은 structure들의 배열*/
 struct ELF64_PHDR {
 	uint32_t p_type;
 	uint32_t p_flags;
@@ -306,7 +396,7 @@ struct ELF64_PHDR {
 	uint64_t p_align;
 };
 
-/* Abbreviations */
+/* 약어 */
 #define ELF ELF64_hdr
 #define Phdr ELF64_PHDR
 
@@ -320,8 +410,15 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
  * Returns true if successful, false otherwise. */
+/* User process의 페이지 테이블 생성
+   파일을 open하고, ELF 헤더정보를 메모리로 읽어 들임.
+   각 세그먼트의 가상주소공간 위치를 읽어 들임. 
+   각 세그먼트를 파일로부터 읽어 들임.
+   스택 생성 및 초기화
+   - esp: 스택 포인터 주소
+   - eip: text 세그먼트 시작주소 */
 static bool
-load (const char *file_name, struct intr_frame *if_) {
+load (const char *file_name, void (**rip)(void), void **rsp) {
 	struct thread *t = thread_current ();
 	struct ELF ehdr;
 	struct file *file = NULL;
@@ -333,16 +430,17 @@ load (const char *file_name, struct intr_frame *if_) {
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
-	process_activate (thread_current ());
+	t->pagedir = pagedir_create();			/* 페이지 디렉토리 생성 */
+	process_activate (thread_current ());	/* 페이지 테이블 활성화 */
 
-	/* Open executable file. */
+	/* 프로그램 파일 Open */
 	file = filesys_open (file_name);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
 
-	/* Read and verify executable header. */
+	/* ELF파일의 헤더 정보를 읽어와 저장 */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
 			|| ehdr.e_type != 2
@@ -355,8 +453,8 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Read program headers. */
-	file_ofs = ehdr.e_phoff;
-	for (i = 0; i < ehdr.e_phnum; i++) {
+	file_ofs = ehdr.e_phoff;	/* 프로그램 헤더 테이블의 시작을 가리킴 */
+	for (i = 0; i < ehdr.e_phnum; i++) {	/* 프로그램 헤더 entry 개수만큼 돌면서 */
 		struct Phdr phdr;
 
 		if (file_ofs < 0 || file_ofs > file_length (file))
@@ -365,7 +463,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 		if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
 			goto done;
-		file_ofs += sizeof phdr;
+		file_ofs += sizeof phdr;	/* 실행 가능 오브젝트 파일의 프로그램 헤더 */
 		switch (phdr.p_type) {
 			case PT_NULL:
 			case PT_NOTE:
@@ -397,6 +495,7 @@ load (const char *file_name, struct intr_frame *if_) {
 						read_bytes = 0;
 						zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
 					}
+					/* 배치정보를 통해 파일을 메모리에 적재. */
 					if (!load_segment (file, file_page, (void *) mem_page,
 								read_bytes, zero_bytes, writable))
 						goto done;
@@ -407,13 +506,14 @@ load (const char *file_name, struct intr_frame *if_) {
 		}
 	}
 
-	/* Set up stack. */
-	if (!setup_stack (if_))
+	/* 스택 초기화 */
+	if (!setup_stack (rsp))
 		goto done;
 
-	/* Start address. */
-	if_->rip = ehdr.e_entry;
-
+	/* Start address. */ 
+	// if_->rip = ehdr.e_entry;	
+	rip = ehdr.e_entry;	/*악깡버*/
+	
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
 

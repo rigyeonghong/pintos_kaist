@@ -11,7 +11,7 @@
    stack, set up some registers as needed by the kernel, and then
    call intr_handler(), which actually handles the interrupt.
 */
-.section .text
+.text
 .func intr_entry
 intr_entry:
 	/* Save caller's registers. */
@@ -64,6 +64,8 @@ intr_entry:
 	addq $32, %rsp
 	iretq
 .endfunc
+
+
 
 /* Interrupt stubs.
 

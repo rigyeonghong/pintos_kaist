@@ -7,6 +7,13 @@
         "palloc.h": "c",
         "interrupt.h": "c",
         "synch.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "intr-stubs.h": "c",
+        "vaddr.h": "c",
+        "process.h": "c",
+        "loader.h": "c",
+        "mmu.h": "c",
+        "stddef.h": "c",
+        "init.h": "c"
     }
 }
