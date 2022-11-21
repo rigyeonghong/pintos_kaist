@@ -201,6 +201,7 @@ pml4_destroy (uint64_t *pml4) {
 
 /* Loads page directory PD into the CPU's page directory base
  * register. */
+/* 페이지 디렉터리 PD를 CPU의 페이지 디렉터리 기본 레지스터에 로드 */
 void
 pml4_activate (uint64_t *pml4) {
 	lcr3 (vtop (pml4 ? pml4 : base_pml4));

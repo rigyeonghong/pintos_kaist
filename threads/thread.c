@@ -325,8 +325,10 @@ void
 thread_yield (void) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
-
-	ASSERT (!intr_context ());
+	// if(intr_context()){
+	// 	return;
+	// }
+	// ASSERT (!intr_context ()); // 외부 인터럽트면 중단 / timer 인터럽트는 내부 인터럽트라서 통과
 
 	old_level = intr_disable ();		 /* interrupt 비활성화 */
 	if (curr != idle_thread)
@@ -737,7 +739,7 @@ schedule (void) {
 
 #ifdef USERPROG
 	/* Activate the new address space. */
-	process_activate (next);
+	// process_activate (next);
 #endif
 
 	if (curr != next) {

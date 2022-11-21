@@ -7,7 +7,6 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
-#include "userprog/pagedir.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -30,7 +29,7 @@ static void process_cleanup (void);
 static bool load (const char *file_name, void (**rip)(void), void **rsp);
 static void initd (void *f_name);
 static void __do_fork (void *);
-static void start_process (void *file_name_);	/* 메모리 적재 성공 시 응용 프로그램 실행, 실패 시 스레드 종료 */
+// static void start_process (void *file_name_);	/* 메모리 적재 성공 시 응용 프로그램 실행, 실패 시 스레드 종료 */
 void argument_stack(char **parse ,int count ,void **esp); /* 유저 스택에 프로그램 이름과 인자들을 저장하는 함수 */
 
 /* General process initializer for initd and other process. */
@@ -44,9 +43,10 @@ process_init (void) {
  * before process_create_initd() returns. Returns the initd's
  * thread id, or TID_ERROR if the thread cannot be created.
  * Notice that THIS SHOULD BE CALLED ONCE. */
+/* FILE_NAME에서 로드된 "initd"라는 첫 번째 사용자 및 프로그램을 시작 */
 tid_t
 process_create_initd (const char *file_name) {
-	char *fn_copy;	/* start_process 함수를 수행할 때 사용하는 인자 값 */
+	char *fn_copy;	/* process_exec 함수를 수행할 때 사용하는 인자 값 */
 	tid_t tid;
 	char *f_name;
 
@@ -60,7 +60,7 @@ process_create_initd (const char *file_name) {
 
 	/* Create a new thread to execute FILE_NAME. */
 	/* 프로그램을 실행할 스레드 생성 */
-	tid = thread_create (f_name, PRI_DEFAULT, start_process, file_name);
+	tid = thread_create (f_name, PRI_DEFAULT, process_exec, file_name);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -170,10 +170,15 @@ error:
 
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
+/* 현재 실행 컨텍스트를 f_name으로 전환
+   실패 시 -1을 반환 */
 int
 process_exec (void *f_name) {
 	char *file_name = f_name;
 	bool success;
+	char *ret_ptr;
+    char *next_ptr;
+	int cnt = 1;
 
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
@@ -184,7 +189,22 @@ process_exec (void *f_name) {
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
 	/* We first kill the current context */
-	process_cleanup ();
+	/* 먼저 현재 컨텍스트를 제거 */
+	// process_cleanup ();
+
+	// 2번째 인자부터 file_name_에 있는 거 또 쪼개기
+	/* 인자들을 띄어쓰기 기준으로 토큰화 및 토큰의 개수 계산 (strtok_r() 함수 이용) */
+	ret_ptr = strtok_r(file_name, DELIM, &next_ptr);
+	while(ret_ptr) {
+		ret_ptr = strtok_r(NULL, DELIM, &next_ptr);
+		cnt ++;
+	}
+	/* 유저 스택에 프로그램 이름과 인자들을 저장하는 함수 */
+	argument_stack(file_name, cnt, _if.rsp);
+	// hex_dump(if_.rsp , if_.rsp , PHYS_BASE – if_.rsp , true);
+
+	/* Initialize interrupt frame and load executable. */
+	memset (&_if, 0, sizeof _if);
 
 	/* And then load the binary */
 	success = load (file_name, &_if.rip, &_if.rsp);
@@ -241,38 +261,38 @@ void argument_stack(char **parse ,int count ,void **rsp){
 }
 
 
-/* 메모리 적재 성공 시 응용 프로그램 실행, 실패 시 스레드 종료 */
-static void start_process (void *file_name_) {
-	char *file_name = file_name_;
-	struct intr_frame if_;
-    bool success;
-	char *ret_ptr;
-    char *next_ptr;
-	int cnt = 1;
+// /* 메모리 적재 성공 시 응용 프로그램 실행, 실패 시 스레드 종료 */
+// static void start_process (void *file_name_) {
+// 	char *file_name = file_name_;
+// 	struct intr_frame if_;
+//     bool success;
+// 	char *ret_ptr;
+//     char *next_ptr;
+// 	int cnt = 1;
 
-	// 2번째 인자부터 file_name_에 있는 거 또 쪼개기
-	/* 인자들을 띄어쓰기 기준으로 토큰화 및 토큰의 개수 계산 (strtok_r() 함수 이용) */
-	ret_ptr = strtok_r(file_name, DELIM, &next_ptr);
-	while(ret_ptr) {
-		ret_ptr = strtok_r(NULL, DELIM, &next_ptr);
-		cnt ++;
-	}
+// 	// 2번째 인자부터 file_name_에 있는 거 또 쪼개기
+// 	/* 인자들을 띄어쓰기 기준으로 토큰화 및 토큰의 개수 계산 (strtok_r() 함수 이용) */
+// 	ret_ptr = strtok_r(file_name, DELIM, &next_ptr);
+// 	while(ret_ptr) {
+// 		ret_ptr = strtok_r(NULL, DELIM, &next_ptr);
+// 		cnt ++;
+// 	}
 	
-	/* 유저 스택에 프로그램 이름과 인자들을 저장하는 함수 */
-	argument_stack(file_name, cnt, if_.rsp);
-	hex_dump(if_.rsp , if_.rsp , PHYS_BASE – if_.rsp , true);
+// 	/* 유저 스택에 프로그램 이름과 인자들을 저장하는 함수 */
+// 	argument_stack(file_name, cnt, if_.rsp);
+// 	// hex_dump(if_.rsp , if_.rsp , PHYS_BASE – if_.rsp , true);
 
-	/* Initialize interrupt frame and load executable. */
-	memset (&if_, 0, sizeof if_);
+// 	/* Initialize interrupt frame and load executable. */
+// 	memset (&if_, 0, sizeof if_);
 
-	/* if_.rsp는 스택 포인터 */
-	success = load(file_name, &if_.rip, &if_.rsp); /* file_name의 프로그램을 메모리에 적재 */
-	if (!success)
-		thread_exit ();
-	/* start user program */
-	// asm volatile ("movq %0, %%rsp; jmp intr_exit" : : "g" (&if_) : "memory");
-	NOT_REACHED();
-}
+// 	/* if_.rsp는 스택 포인터 */
+// 	success = load(file_name, &if_.rip, &if_.rsp); /* file_name의 프로그램을 메모리에 적재 */
+// 	if (!success)
+// 		thread_exit ();
+// 	/* start user program */
+// 	// asm volatile ("movq %0, %%rsp; jmp intr_exit" : : "g" (&if_) : "memory");
+// 	NOT_REACHED();
+// }
 
 
 
@@ -318,6 +338,7 @@ process_cleanup (void) {
 	uint64_t *pml4;
 	/* Destroy the current process's page directory and switch back
 	 * to the kernel-only page directory. */
+	/* 현재 프로세스의 페이지 디렉터리를 삭제하고 커널 전용 페이지 디렉터리로 다시 전환 */
 	pml4 = curr->pml4;
 	if (pml4 != NULL) {
 		/* Correct ordering here is crucial.  We must set
@@ -430,7 +451,8 @@ load (const char *file_name, void (**rip)(void), void **rsp) {
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
-	t->pagedir = pagedir_create();			/* 페이지 디렉토리 생성 */
+	// t->pagedir = pagedir_create();			/* 페이지 디렉토리 생성 */
+
 	process_activate (thread_current ());	/* 페이지 테이블 활성화 */
 
 	/* 프로그램 파일 Open */

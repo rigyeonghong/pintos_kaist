@@ -14,6 +14,7 @@
         "loader.h": "c",
         "mmu.h": "c",
         "stddef.h": "c",
-        "init.h": "c"
+        "init.h": "c",
+        "*.inc": "c"
     }
 }
