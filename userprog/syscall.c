@@ -23,14 +23,19 @@ bool remove (const char *file);
 int write (int fd, const void *buffer, unsigned size); 
 int wait (tid_t pid);
 tid_t fork (const char *thread_name, struct intr_frame *f);
-// void seek (int fd, unsigned position);
 int exec (const char *file);
-// int read (int fd, void *buffer, unsigned size);
 int open (const char *file);
 int add_file_to_fd_table(struct file *file);
 struct file *fd_to_file(int fd);
 void remove_fd(int fd); 
 void close (int fd);
+int filesize (int fd);
+int read (int fd, void *buffer, unsigned size);
+void seek (int fd, unsigned position);
+unsigned tell (int fd);
+
+struct lock filesys_lock;
+
 
 /* System call.
  *
@@ -56,6 +61,7 @@ syscall_init (void) {
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+	lock_init(&filesys_lock);
 }
 
 /* 주소 값이 유저 영역에서 사용하는 주소 값인지 확인 하는 함수
@@ -80,6 +86,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	/* 유저 스택에 저장되어 있는 시스템 콜 넘버를 이용해 시스템 콜 핸들러 구현 */
 	int sys_num = f->R.rax;
 	// check_address(sys_num);  /* 스택 포인터가 유저 영역인지 확인 */
+	// printf("===========syscall_handler 안========%d=======\n", sys_num);
 
 	switch (sys_num){
 		case SYS_HALT:
@@ -103,28 +110,34 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_FORK:
 			f->R.rax = fork(f->R.rdi, f);
 			break;
-		// case SYS_SEEK:
-		// 	seek(f->R.rdi, f->R.rsi);
-		// 	break;
 		case SYS_EXEC:
 			if(exec(f->R.rdi) == -1){
 				exit(-1);
 			}
 			break;
-		// case SYS_READ:
-		// 	read(f->R.rdi, f->R.rsi, f->R.rdx);
-		// 	break;
 		case SYS_OPEN:
 			f->R.rax = open(f->R.rdi);
 			break;
 		case SYS_CLOSE:
 			close(f->R.rdi);
 			break;
-		break;
+		case SYS_FILESIZE:
+			f->R.rax = filesize(f->R.rdi);
+			break;
+		case SYS_READ:
+			f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
+			break;
+		case SYS_SEEK:
+			seek(f->R.rdi, f->R.rsi);
+			break;
+		case SYS_TELL:
+			f->R.rax = tell(f->R.rdi);
+			break;
+		default:
+			// exit(-1);
+			// break;
+			thread_exit();
 	}
-
-	// thread_exit ();
-	//printf ("system call!\n");
 }
 
 
@@ -164,9 +177,6 @@ remove (const char *file) {
 	return filesys_remove(file);
 }
 
-// void
-// seek (int fd, unsigned position) {
-// }
 
 /* 자식 프로세스를 생성하고 프로그램을 실행시키는 시스템 콜 */
 int
@@ -207,7 +217,9 @@ add_file_to_fdt(struct file *file){
 int
 open (const char *file) {
 /* 성공 시 fd를 생성하고 반환, 실패 시 -1 반환 */
+	check_address(file);
 	struct file *open_file = filesys_open (file);
+	
 	if(open_file == NULL){
 		return -1;
 	}
@@ -219,17 +231,27 @@ open (const char *file) {
 	return fd;
 }
 
-
-// int
-// read (int fd, void *buffer, unsigned size) {
-// 	return syscall3 (SYS_READ, fd, buffer, size);
-// }
-
 int
 write (int fd, const void *buffer, unsigned size) {
-	if (fd == 1) {
+	struct file *file = fd_to_file(fd);
+	check_address(buffer);
+	check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
+	if(file == NULL){
+		return -1;
+	}
+
+	lock_acquire(&filesys_lock);
+	if (fd == 1) {	// stdout(표준 출력) - 모니터
 		putbuf(buffer, size);
+		lock_release(&filesys_lock);
 		return size;
+	}else if(fd == 0){
+		lock_release(&filesys_lock);
+		return -1;
+	}else{ 
+		int bytes_written = file_write(file, buffer, size);
+		lock_release(&filesys_lock);
+		return bytes_written;
 	}
 }
 
@@ -255,6 +277,9 @@ void
 remove_fd(int fd){
 	struct thread *cur = thread_current();
 	struct file **cur_fd_table = cur->fd_table;
+	if(fd< 0 || fd > MAX_FD_NUM){
+		return;
+	}
 	cur_fd_table[fd] = NULL;
 }
 
@@ -265,7 +290,80 @@ close (int fd) {
 	if(file == NULL){
 		return;
 	}
-	file_close(file);
+	// file_close(file);
 	// fdt 에서 지워주기
 	remove_fd(fd);
+}
+
+int
+filesize (int fd) {
+	struct file *file = fd_to_file(fd);
+	if(file == NULL){
+		return -1;
+	}
+	return file_length(file);
+}
+
+int
+read (int fd, void *buffer, unsigned size) {
+	struct file *file = fd_to_file(fd);
+	// 버퍼의 처음 시작~ 끝 주소 check
+	check_address(buffer);
+	check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
+	char *buf = buffer;
+	int read_size;
+
+	if(file == NULL){
+		return -1;
+	}
+	// 정상인데 0 일 때, 키보드면 input_get
+	if(fd == 0){
+		char keyboard;
+		for(read_size =0; read_size < size; read_size ++){
+			keyboard = input_getc();
+			// *buf ++ = keyboard;
+			buf = keyboard;
+			*buf ++;
+			if(keyboard == '\0'){ // null 전까지 저장
+				break;
+			}
+		} 
+	}else if(fd == 1){
+		return -1;
+	}else{
+	// 정상일 때 file_read
+		lock_acquire(&filesys_lock);
+		read_size = file_read(file, buffer, size);	// 실제 읽은 사이즈 return
+		lock_release(&filesys_lock);
+	}
+	return read_size;
+}
+
+/* 다음 읽거나 쓸 file_pos 옮겨주기 */
+void
+seek (int fd, unsigned position) {
+	struct file *file = fd_to_file(fd);
+	// check_address(file);
+	// if(file == NULL){
+	// 	return -1;
+	// }
+	if(fd < 2){
+		return;
+	}
+	if(fd >= 2){
+		file_seek(file, position);
+	}
+}
+
+unsigned
+tell (int fd) {
+	struct file *file = fd_to_file(fd);
+	// check_address(file);
+	// if(file == NULL){
+	// 	return -1;
+	// }
+	if(fd < 2){
+		return;
+	}
+	return file_tell(file);
 }
