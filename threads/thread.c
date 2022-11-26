@@ -220,7 +220,7 @@ thread_create (const char *name, int priority,
 	// t->is_mem_load = false;	/* 프로그램이 로드되지 않음 */
 	// t->is_proc_off = false;	/* 프로세스가 종료되지 않음 */
 	t->child_elem;
-	list_push_back (&t->childs, &t->child_elem);	/* 부모의 자식 리스트에 추가 */
+	list_push_back (&cur->childs, &t->child_elem);	/* 부모의 자식 리스트에 추가 */
 
 	/* 실행 대기열에 추가 */
 	thread_unblock (t);

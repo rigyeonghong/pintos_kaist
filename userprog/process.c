@@ -366,10 +366,10 @@ void process_exit(void)
 	/* 실행 중인 파일 close */
 	file_close(cur->run_file);
 
-	process_cleanup ();
 	/* 프로세스 디스크립터에 프로세스 종료를 알림 */
 	sema_up (&cur->wait_sema);	// 현재가 자식 wait_sema up
 	sema_down (&cur->free_sema); 
+	process_cleanup ();
 }
 
 /* Free the current process's resources. */
