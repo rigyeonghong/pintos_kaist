@@ -25,7 +25,7 @@ int wait (tid_t pid);
 tid_t fork (const char *thread_name, struct intr_frame *f);
 int exec (const char *file);
 int open (const char *file);
-int add_file_to_fd_table(struct file *file);
+int add_file_to_fdt(struct file *file);
 struct file *fd_to_file(int fd);
 void remove_fd(int fd); 
 void close (int fd);
@@ -193,6 +193,7 @@ exec (const char *file) {
 		/* 프로그램 적재 실패 시 -1 리턴 */
 		return -1;
 	}
+
 	/* 프로그램 적재 성공 시 자식 프로세스의 pid 리턴 */
 	NOT_REACHED();
 	return 0;
@@ -203,6 +204,9 @@ int
 add_file_to_fdt(struct file *file){
 	struct thread *cur = thread_current();
 	struct file **cur_fd_table = cur->fd_table;
+	// while(cur->fdidx < MAX_FD_NUM && cur_fd_table[cur->fdidx]){
+	// 	cur->fdidx++;
+	// }
 	for (int i = cur->fdidx; i < MAX_FD_NUM; i++){
 		if (cur_fd_table[i] == NULL){
 			cur_fd_table[i] = file;
@@ -233,26 +237,24 @@ open (const char *file) {
 
 int
 write (int fd, const void *buffer, unsigned size) {
-	struct file *file = fd_to_file(fd);
 	check_address(buffer);
-	check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
+	int write_result;
+	struct file *file = fd_to_file(fd);
 	if(file == NULL){
-		return -1;
+		return 0;
 	}
 
 	lock_acquire(&filesys_lock);
 	if (fd == 1) {	// stdout(표준 출력) - 모니터
 		putbuf(buffer, size);
-		lock_release(&filesys_lock);
-		return size;
-	}else if(fd == 0){
-		lock_release(&filesys_lock);
-		return -1;
+		write_result = size;
+	}else if(fd == 0){ // stdin
+		write_result = 0;
 	}else{ 
-		int bytes_written = file_write(file, buffer, size);
-		lock_release(&filesys_lock);
-		return bytes_written;
+		write_result = file_write(file, buffer, size);
 	}
+	lock_release(&filesys_lock);
+	return write_result;
 }
 
 /* 현재 프로세스의 복제본으로 자식 프로세스를 생성 */
@@ -306,11 +308,11 @@ filesize (int fd) {
 
 int
 read (int fd, void *buffer, unsigned size) {
-	struct file *file = fd_to_file(fd);
 	// 버퍼의 처음 시작~ 끝 주소 check
 	check_address(buffer);
-	check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
-	char *buf = buffer;
+	// check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
+	struct file *file = fd_to_file(fd);
+	uint8_t *buf = buffer;
 	int read_size;
 
 	if(file == NULL){
@@ -321,14 +323,13 @@ read (int fd, void *buffer, unsigned size) {
 		char keyboard;
 		for(read_size =0; read_size < size; read_size ++){
 			keyboard = input_getc();
-			// *buf ++ = keyboard;
-			buf = keyboard;
-			*buf ++;
+			*buf ++ = keyboard;
+			// *buffer ++;
 			if(keyboard == '\0'){ // null 전까지 저장
 				break;
 			}
 		} 
-	}else if(fd == 1){
+	}else if(fd == 1){ // stdout
 		return -1;
 	}else{
 	// 정상일 때 file_read
@@ -350,9 +351,9 @@ seek (int fd, unsigned position) {
 	if(fd < 2){
 		return;
 	}
-	if(fd >= 2){
+	// if(fd >= 2){
 		file_seek(file, position);
-	}
+	// }
 }
 
 unsigned
