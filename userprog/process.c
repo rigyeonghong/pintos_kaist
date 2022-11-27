@@ -345,9 +345,9 @@ void process_exit(void)
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-	// for (int i =0; i < MAX_FD_NUM; i++){
-	// 	close(i);
-	// }
+	for (int i =0; i < MAX_FD_NUM; i++){
+		close(i);
+	}
 	palloc_free_multiple(cur->fd_table, FDT_PAGES);  // for multi-oom(메모리 누수)
 	
 	/* 실행 중인 파일 close */

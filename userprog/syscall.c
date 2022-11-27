@@ -188,9 +188,8 @@ exec (const char *file) {
 		exit(-1);
 	}	
 	strlcpy(fn_copy, file, size);
-	/* process_execute() 함수를 호출하여 자식 프로세스 생성 */ 
-	if (process_exec(fn_copy) == -1){
-		/* 프로그램 적재 실패 시 -1 리턴 */
+	/* process_exec() 함수를 호출하여 자식 프로세스 생성 */ 
+	if (process_exec(fn_copy) == -1){			/* 프로그램 적재 실패 시 -1 리턴 */
 		return -1;
 	}
 
@@ -207,15 +206,25 @@ add_file_to_fdt(struct file *file){
 	// while(cur->fdidx < MAX_FD_NUM && cur_fd_table[cur->fdidx]){
 	// 	cur->fdidx++;
 	// }
-	for (int i = cur->fdidx; i < MAX_FD_NUM; i++){
-		if (cur_fd_table[i] == NULL){
-			cur_fd_table[i] = file;
-			cur->fdidx = i;
-			return cur->fdidx;
-		}
-	}
-	cur->fdidx = MAX_FD_NUM;
-	return -1;
+	while (cur->fdidx < MAX_FD_NUM && cur_fd_table[cur->fdidx]){
+        cur->fdidx++;
+    }
+
+    // error - fd table full
+    if (cur->fdidx >= MAX_FD_NUM)
+        return -1;
+
+    cur_fd_table[cur->fdidx] = file;
+    return cur->fdidx;
+	// for (int i = cur->fdidx; i < MAX_FD_NUM; i++){
+	// 	if (cur_fd_table[i] == NULL){
+	// 		cur_fd_table[i] = file;
+	// 		cur->fdidx = i;
+	// 		return cur->fdidx;
+	// 	}
+	// }
+	// cur->fdidx = MAX_FD_NUM;
+	// return -1;
 }
 
 int
@@ -324,7 +333,6 @@ read (int fd, void *buffer, unsigned size) {
 		for(read_size =0; read_size < size; read_size ++){
 			keyboard = input_getc();
 			*buf ++ = keyboard;
-			// *buffer ++;
 			if(keyboard == '\0'){ // null 전까지 저장
 				break;
 			}
@@ -344,25 +352,16 @@ read (int fd, void *buffer, unsigned size) {
 void
 seek (int fd, unsigned position) {
 	struct file *file = fd_to_file(fd);
-	// check_address(file);
-	// if(file == NULL){
-	// 	return -1;
-	// }
+
 	if(fd < 2){
 		return;
 	}
-	// if(fd >= 2){
-		file_seek(file, position);
-	// }
+	file_seek(file, position);
 }
 
 unsigned
 tell (int fd) {
 	struct file *file = fd_to_file(fd);
-	// check_address(file);
-	// if(file == NULL){
-	// 	return -1;
-	// }
 	if(fd < 2){
 		return;
 	}
