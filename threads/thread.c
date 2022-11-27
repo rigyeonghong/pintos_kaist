@@ -574,14 +574,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->wait_on_lock = NULL;
 	list_init (&t->donations);
 	
-	// #ifdef USERPROG
 	list_init (&t->childs);		 /* 자식 리스트 초기화 */
 	sema_init(&t->fork_sema, 0); /* fork 세마포어 0으로 초기화 */ 
 	sema_init(&t->wait_sema, 0); /* wait 세마포어 0으로 초기화 */ 
 	sema_init(&t->free_sema, 0); /* exit 세마포어 0으로 초기화 */ 
 	t->run_file = NULL;
-	// #endif
-
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

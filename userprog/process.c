@@ -200,7 +200,7 @@ __do_fork(void *aux){
 	parent_if = &parent->parent_if;
 
 	/* 1. Read the cpu context to local stack. */
-	memcpy(&if_, parent_if, sizeof(struct intr_frame));
+	memcpy(&if_, &parent->parent_if, sizeof(struct intr_frame));
 	if_.R.rax = 0; // fork return value for child
 
 	/* 2. Duplicate PT */
