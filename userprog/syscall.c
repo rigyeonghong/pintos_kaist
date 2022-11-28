@@ -25,7 +25,7 @@ int wait (tid_t pid);
 tid_t fork (const char *thread_name, struct intr_frame *f);
 int exec (const char *file);
 int open (const char *file);
-int add_file_to_fd_table(struct file *file);
+int add_file_to_fdt(struct file *file);
 struct file *fd_to_file(int fd);
 void remove_fd(int fd); 
 void close (int fd);
@@ -73,7 +73,6 @@ check_address(void *addr) {
 /* 1. 포인터가 가리키는 주소가 유저영역의 주소인지 확인 */
 /* 2. 포인터가 가리키는 주소가 존재하는지 확인 */
 /* 3. 포인터가 가리키는 주소에 해당하는 실주소가 없는 경우 NULL 반환 */
-// || pml4_get_page(cur->pml4, addr) == NULL
 	if(!is_user_vaddr(addr) || addr == NULL || pml4_get_page(cur->pml4, addr) == NULL){
 		exit(-1);
 	}
@@ -86,7 +85,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	/* 유저 스택에 저장되어 있는 시스템 콜 넘버를 이용해 시스템 콜 핸들러 구현 */
 	int sys_num = f->R.rax;
 	// check_address(sys_num);  /* 스택 포인터가 유저 영역인지 확인 */
-	// printf("===========syscall_handler 안========%d=======\n", sys_num);
 
 	switch (sys_num){
 		case SYS_HALT:
@@ -134,8 +132,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = tell(f->R.rdi);
 			break;
 		default:
-			// exit(-1);
-			// break;
 			thread_exit();
 	}
 }
@@ -188,11 +184,11 @@ exec (const char *file) {
 		exit(-1);
 	}	
 	strlcpy(fn_copy, file, size);
-	/* process_execute() 함수를 호출하여 자식 프로세스 생성 */ 
-	if (process_exec(fn_copy) == -1){
-		/* 프로그램 적재 실패 시 -1 리턴 */
+	/* process_exec() 함수를 호출하여 자식 프로세스 생성 */ 
+	if (process_exec(fn_copy) == -1){			/* 프로그램 적재 실패 시 -1 리턴 */
 		return -1;
 	}
+
 	/* 프로그램 적재 성공 시 자식 프로세스의 pid 리턴 */
 	NOT_REACHED();
 	return 0;
@@ -203,6 +199,7 @@ int
 add_file_to_fdt(struct file *file){
 	struct thread *cur = thread_current();
 	struct file **cur_fd_table = cur->fd_table;
+
 	for (int i = cur->fdidx; i < MAX_FD_NUM; i++){
 		if (cur_fd_table[i] == NULL){
 			cur_fd_table[i] = file;
@@ -218,7 +215,9 @@ int
 open (const char *file) {
 /* 성공 시 fd를 생성하고 반환, 실패 시 -1 반환 */
 	check_address(file);
+	lock_acquire(&filesys_lock);
 	struct file *open_file = filesys_open (file);
+	lock_release(&filesys_lock);
 	
 	if(open_file == NULL){
 		return -1;
@@ -233,26 +232,24 @@ open (const char *file) {
 
 int
 write (int fd, const void *buffer, unsigned size) {
-	struct file *file = fd_to_file(fd);
 	check_address(buffer);
-	check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
+	int write_result;
+	struct file *file = fd_to_file(fd);
 	if(file == NULL){
-		return -1;
+		return 0;
 	}
 
 	lock_acquire(&filesys_lock);
 	if (fd == 1) {	// stdout(표준 출력) - 모니터
 		putbuf(buffer, size);
-		lock_release(&filesys_lock);
-		return size;
-	}else if(fd == 0){
-		lock_release(&filesys_lock);
-		return -1;
+		write_result = size;
+	}else if(fd == 0){ // stdin
+		write_result = 0;
 	}else{ 
-		int bytes_written = file_write(file, buffer, size);
-		lock_release(&filesys_lock);
-		return bytes_written;
+		write_result = file_write(file, buffer, size);
 	}
+	lock_release(&filesys_lock);
+	return write_result;
 }
 
 /* 현재 프로세스의 복제본으로 자식 프로세스를 생성 */
@@ -277,7 +274,7 @@ void
 remove_fd(int fd){
 	struct thread *cur = thread_current();
 	struct file **cur_fd_table = cur->fd_table;
-	if(fd< 0 || fd > MAX_FD_NUM){
+	if(fd< 0 || fd >= MAX_FD_NUM){
 		return;
 	}
 	cur_fd_table[fd] = NULL;
@@ -287,10 +284,10 @@ void
 close (int fd) {
 	// fd를 file로 변경해서 file_close()인자로 넣기
 	struct file *file = fd_to_file(fd);
+
 	if(file == NULL){
 		return;
 	}
-	// file_close(file);
 	// fdt 에서 지워주기
 	remove_fd(fd);
 }
@@ -306,11 +303,11 @@ filesize (int fd) {
 
 int
 read (int fd, void *buffer, unsigned size) {
-	struct file *file = fd_to_file(fd);
 	// 버퍼의 처음 시작~ 끝 주소 check
 	check_address(buffer);
-	check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
-	char *buf = buffer;
+	// check_address(buffer+size-1); // -1은 null 전까지만 유효하면 되서 
+	struct file *file = fd_to_file(fd);
+	uint8_t *buf = buffer;
 	int read_size;
 
 	if(file == NULL){
@@ -321,14 +318,12 @@ read (int fd, void *buffer, unsigned size) {
 		char keyboard;
 		for(read_size =0; read_size < size; read_size ++){
 			keyboard = input_getc();
-			// *buf ++ = keyboard;
-			buf = keyboard;
-			*buf ++;
+			*buf ++ = keyboard;
 			if(keyboard == '\0'){ // null 전까지 저장
 				break;
 			}
 		} 
-	}else if(fd == 1){
+	}else if(fd == 1){ // stdout
 		return -1;
 	}else{
 	// 정상일 때 file_read
@@ -343,25 +338,16 @@ read (int fd, void *buffer, unsigned size) {
 void
 seek (int fd, unsigned position) {
 	struct file *file = fd_to_file(fd);
-	// check_address(file);
-	// if(file == NULL){
-	// 	return -1;
-	// }
+
 	if(fd < 2){
 		return;
 	}
-	if(fd >= 2){
-		file_seek(file, position);
-	}
+	file_seek(file, position);
 }
 
 unsigned
 tell (int fd) {
 	struct file *file = fd_to_file(fd);
-	// check_address(file);
-	// if(file == NULL){
-	// 	return -1;
-	// }
 	if(fd < 2){
 		return;
 	}
