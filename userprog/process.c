@@ -28,7 +28,7 @@ static void initd(void *f_name);
 static void __do_fork(void *);
 struct thread *get_child(int pid);
 
-struct lock file_lock;
+// struct lock file_lock;
 
 /* General process initializer for initd and other process. */
 static void
@@ -55,8 +55,7 @@ tid_t process_create_initd(const char *file_name)
 	strlcpy(fn_copy, file_name, PGSIZE);
 
 	char *token, *ptr;
-	for (token = strtok_r(file_name, " ", &ptr); token != NULL; token = strtok_r(NULL, " ", &ptr))
-		;
+	for (token = strtok_r(file_name, " ", &ptr); token != NULL; token = strtok_r(NULL, " ", &ptr));
 
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create(file_name, PRI_DEFAULT, initd, fn_copy);
@@ -232,6 +231,11 @@ __do_fork(void *aux){
 		goto error;
 	}
 
+	// for (int i = 0; i < MAX_FD_NUM; i++) {
+	// 	if (current->fd_table[i] == NULL) continue;
+	// 	printf("before: [%d]%p\n", i, current->fd_table[i]);
+	// }
+
 	current->fd_table[0] = parent->fd_table[0];
 	current->fd_table[1] = parent->fd_table[1];
 	for (int i = 2; i < MAX_FD_NUM; i++){
@@ -242,6 +246,11 @@ __do_fork(void *aux){
 
 		current->fd_table[i] = file_duplicate(f);
 	}
+
+	// for (int i = 0; i < MAX_FD_NUM; i++) {
+	// 	if (current->fd_table[i] == NULL) continue;
+	// 	printf("after: [%d]%p\n", i, current->fd_table[i]);
+	// }
 
 	current->fdidx = parent->fdidx;
 
@@ -279,7 +288,9 @@ int process_exec(void *f_name)
 	// memset(&_if, 0, sizeof(_if)); // 필요하지 않은 레지스터까지 0으로 바꿔 "#GP General Protection Exception"; 오류 발생
 
 	/* And then load the binary */
+	// lock_acquire(&filesys_lock);
 	success = load(file_name, &_if); // f_name, if_.rip (function entry point), rsp(stack top : user stack)
+	// lock_release(&filesys_lock);
 
 	/* If load failed, quit. */
 	palloc_free_page(file_name);
@@ -345,7 +356,7 @@ void process_exit(void)
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-	for (int i =0; i < MAX_FD_NUM; i++){
+	for (int i = 0; i < MAX_FD_NUM; i++){
 		close(i);
 	}
 	palloc_free_multiple(cur->fd_table, FDT_PAGES);  // for multi-oom(메모리 누수)
@@ -469,11 +480,9 @@ void argument_stack(char **argv, int argc, struct intr_frame *if_)
 	for (int i = argc - 1; i >= 0; i--)
 	{
 		int argv_len = strlen(argv[i]); // foo 면 3
-		/*
-		if_->rsp: 현재 user stack에서 현재 위치를 가리키는 스택 포인터.
+		/* if_->rsp: 현재 user stack에서 현재 위치를 가리키는 스택 포인터.
 		각 인자에서 인자 크기(argv_len)를 읽고 (이때 각 인자에 sentinel이 포함되어 있으니 +1 - strlen에서는 sentinel 빼고 읽음)
-		그 크기만큼 rsp를 내려준다. 그 다음 빈 공간만큼 memcpy를 해준다.
-		 */
+		그 크기만큼 rsp를 내려준다. 그 다음 빈 공간만큼 memcpy를 해준다. */
 		if_->rsp = if_->rsp - (argv_len + 1);
 		memcpy(if_->rsp, argv[i], argv_len + 1);
 		arg_address[i] = if_->rsp; // arg_address 배열에 현재 문자열 시작 주소 위치를 저장한다.
@@ -524,7 +533,7 @@ load(const char *file_name, struct intr_frame *if_)
 	char *argv[128]; // 커맨드 라인 길이 제한 128
 	char *token, *save_ptr;
 	int argc = 0;
-	lock_init(&file_lock);
+	// lock_init(&file_lock);
 
 	token = strtok_r(file_name, " ", &save_ptr);
 	argv[argc] = token;
@@ -551,8 +560,8 @@ load(const char *file_name, struct intr_frame *if_)
 		/* 락 해제 */
 		// lock_release(&file_lock);
 		printf("load: %s: open failed\n", file_name);
-		// goto done;
-		exit(-1);
+		goto done;
+		// exit(-1);
 	}
 
 	/* thread 구조체의 run_file을 현재 실행할 파일로 초기화 */ 

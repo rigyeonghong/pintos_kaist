@@ -73,7 +73,6 @@ check_address(void *addr) {
 /* 1. 포인터가 가리키는 주소가 유저영역의 주소인지 확인 */
 /* 2. 포인터가 가리키는 주소가 존재하는지 확인 */
 /* 3. 포인터가 가리키는 주소에 해당하는 실주소가 없는 경우 NULL 반환 */
-// || pml4_get_page(cur->pml4, addr) == NULL
 	if(!is_user_vaddr(addr) || addr == NULL || pml4_get_page(cur->pml4, addr) == NULL){
 		exit(-1);
 	}
@@ -86,7 +85,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	/* 유저 스택에 저장되어 있는 시스템 콜 넘버를 이용해 시스템 콜 핸들러 구현 */
 	int sys_num = f->R.rax;
 	// check_address(sys_num);  /* 스택 포인터가 유저 영역인지 확인 */
-	// printf("===========syscall_handler 안========%d=======\n", sys_num);
 
 	switch (sys_num){
 		case SYS_HALT:
@@ -134,8 +132,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = tell(f->R.rdi);
 			break;
 		default:
-			// exit(-1);
-			// break;
 			thread_exit();
 	}
 }
@@ -203,35 +199,25 @@ int
 add_file_to_fdt(struct file *file){
 	struct thread *cur = thread_current();
 	struct file **cur_fd_table = cur->fd_table;
-	// while(cur->fdidx < MAX_FD_NUM && cur_fd_table[cur->fdidx]){
-	// 	cur->fdidx++;
-	// }
-	while (cur->fdidx < MAX_FD_NUM && cur_fd_table[cur->fdidx]){
-        cur->fdidx++;
-    }
 
-    // error - fd table full
-    if (cur->fdidx >= MAX_FD_NUM)
-        return -1;
-
-    cur_fd_table[cur->fdidx] = file;
-    return cur->fdidx;
-	// for (int i = cur->fdidx; i < MAX_FD_NUM; i++){
-	// 	if (cur_fd_table[i] == NULL){
-	// 		cur_fd_table[i] = file;
-	// 		cur->fdidx = i;
-	// 		return cur->fdidx;
-	// 	}
-	// }
-	// cur->fdidx = MAX_FD_NUM;
-	// return -1;
+	for (int i = cur->fdidx; i < MAX_FD_NUM; i++){
+		if (cur_fd_table[i] == NULL){
+			cur_fd_table[i] = file;
+			cur->fdidx = i;
+			return cur->fdidx;
+		}
+	}
+	cur->fdidx = MAX_FD_NUM;
+	return -1;
 }
 
 int
 open (const char *file) {
 /* 성공 시 fd를 생성하고 반환, 실패 시 -1 반환 */
 	check_address(file);
+	lock_acquire(&filesys_lock);
 	struct file *open_file = filesys_open (file);
+	lock_release(&filesys_lock);
 	
 	if(open_file == NULL){
 		return -1;
@@ -288,7 +274,7 @@ void
 remove_fd(int fd){
 	struct thread *cur = thread_current();
 	struct file **cur_fd_table = cur->fd_table;
-	if(fd< 0 || fd > MAX_FD_NUM){
+	if(fd< 0 || fd >= MAX_FD_NUM){
 		return;
 	}
 	cur_fd_table[fd] = NULL;
@@ -298,10 +284,10 @@ void
 close (int fd) {
 	// fd를 file로 변경해서 file_close()인자로 넣기
 	struct file *file = fd_to_file(fd);
+
 	if(file == NULL){
 		return;
 	}
-	// file_close(file);
 	// fdt 에서 지워주기
 	remove_fd(fd);
 }

@@ -209,11 +209,10 @@ thread_create (const char *name, int priority,
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
-	t->fd_table = palloc_get_multiple(0, FDT_PAGES);
-	int stdin = 0; 
-	int stdout = 1;
-	t->fd_table[0] = stdin;
-	t->fd_table[1] = stdout;
+	t->fd_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
+
+	t->fd_table[0] = 1;
+	t->fd_table[1] = 2;
 	t->fdidx = 2;
 	t->child_elem;
 	list_push_back (&thread_current()->childs, &t->child_elem);	/* 부모의 자식 리스트에 추가 */
