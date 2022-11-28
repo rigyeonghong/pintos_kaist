@@ -217,6 +217,7 @@ thread_create (const char *name, int priority,
 	t->child_elem;
 	list_push_back (&thread_current()->childs, &t->child_elem);	/* 부모의 자식 리스트에 추가 */
 
+
 	/* 실행 대기열에 추가 */
 	thread_unblock (t);
 	/* 현재 수행중인 스레드와 가장 높은 우선순위의 스레드의 우선순위를 비교하여 스케줄링 */
