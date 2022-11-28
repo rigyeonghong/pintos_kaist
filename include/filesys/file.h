@@ -1,7 +1,7 @@
 #ifndef FILESYS_FILE_H
 #define FILESYS_FILE_H
 #include "filesys/off_t.h"
-
+#include "threads/synch.h"
 
 struct inode;
 
@@ -11,6 +11,7 @@ struct file *file_reopen (struct file *);
 struct file *file_duplicate (struct file *file);
 void file_close (struct file *);
 struct inode *file_get_inode (struct file *);
+struct lock filesys_lock;
 
 /* Reading and writing. */
 off_t file_read (struct file *, void *, off_t);
