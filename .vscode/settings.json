@@ -19,6 +19,8 @@
         "file.h": "c",
         "filesys.h": "c",
         "stdlib.h": "c",
-        "syscall.h": "c"
+        "syscall.h": "c",
+        "bitmap.h": "c",
+        "vm.h": "c"
     }
 }

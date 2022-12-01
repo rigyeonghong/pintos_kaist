@@ -41,6 +41,7 @@ struct hash_elem {
 
 /* Computes and returns the hash value for hash element E, given
  * auxiliary data AUX. */
+/* 보조 데이터 AUX가 지정된 해시 요소 e에 대한 해시 값을 계산하고 반환 */
 typedef uint64_t hash_hash_func (const struct hash_elem *e, void *aux);
 
 /* Compares the value of two hash elements A and B, given

@@ -105,9 +105,12 @@ vm_evict_frame (void) {
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
- * and return it. This always return valid address. That is, if the user pool
+ * and return it. This always return valid address. That is, if the ㅊ
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
+/* palloc()하고 frame을 얻음. 사용 가능한 페이지가 없는 경우 페이지를 삭제하고 반환 
+   항상 유효한 주소를 반환. 
+   즉, user pool 메모리가 가득 차면 이 기능은 사용 가능한 메모리 공간을 얻기 위해 프레임을 제거 */
 static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
@@ -149,15 +152,18 @@ vm_dealloc_page (struct page *page) {
 }
 
 /* Claim the page that allocate on VA. */
+/* VA에 할당된 page를 할당 */
 bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
-
+	// 먼저 page 가져온 다음
+	// page와 함께 vm_do_claim_page를 호출
 	return vm_do_claim_page (page);
 }
 
 /* Claim the PAGE and set up the mmu. */
+/* 페이지를 할당하고 mmu를 설정 */
 static bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
@@ -167,6 +173,10 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	/* page table entry을 삽입하여 페이지의 VA를 프레임의 PA에 매핑 */
+	// 먼저 vm_get_frame(템플릿에서 이미 완료됨)을 호출하여 프레임을 가져옴.
+	// MMU를 설정해야함. page table에 va → pa로 매핑 추가
+	// 반환 값은 작업의 성공 여부
 
 	return swap_in (page, frame->kva);
 }

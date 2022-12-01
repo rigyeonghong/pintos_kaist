@@ -49,6 +49,7 @@ struct page {
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
+	/* 유형별 데이터가 유니언에 바인딩됨. 각 함수는 현재 유니언을 자동으로 감지 */
 	union {
 		struct uninit_page uninit;
 		struct anon_page anon;
@@ -69,6 +70,9 @@ struct frame {
  * This is one way of implementing "interface" in C.
  * Put the table of "method" into the struct's member, and
  * call it whenever you needed. */
+/* 페이지 작업에 대한 함수 테이블입니다.
+   이것은 C에서 "인터페이스"를 구현하는 한 가지 방법.
+   struct's member에 "method"의 표를 넣고, 필요하면 언제든지 불러 */
 struct page_operations {
 	bool (*swap_in) (struct page *, void *);
 	bool (*swap_out) (struct page *);
@@ -84,7 +88,10 @@ struct page_operations {
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
+/* 현재 프로세스의 메모리 공간을 나타냄
+   구조에 대한 어떤 특정한 설계도를 따르도록 강요안함. 모든 디자인은 알잘딱깔센 */
 struct supplemental_page_table {
+	
 };
 
 #include "threads/thread.h"

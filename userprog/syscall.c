@@ -207,6 +207,7 @@ add_file_to_fdt(struct file *file){
 			return cur->fdidx;
 		}
 	}
+
 	cur->fdidx = MAX_FD_NUM;
 	return -1;
 }

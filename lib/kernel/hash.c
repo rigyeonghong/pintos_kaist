@@ -27,8 +27,8 @@ hash_init (struct hash *h,
 	h->elem_cnt = 0;
 	h->bucket_cnt = 4;
 	h->buckets = malloc (sizeof *h->buckets * h->bucket_cnt);
-	h->hash = hash;
-	h->less = less;
+	h->hash = hash; // 해시 값 
+	h->less = less; // true or false
 	h->aux = aux;
 
 	if (h->buckets != NULL) {

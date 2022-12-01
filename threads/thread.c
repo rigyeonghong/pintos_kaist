@@ -211,8 +211,8 @@ thread_create (const char *name, int priority,
 
 	t->fd_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
 
-	t->fd_table[0] = 1;
-	t->fd_table[1] = 2;
+	t->fd_table[0] = 0;
+	t->fd_table[1] = 1;
 	t->fdidx = 2;
 	t->child_elem;
 	list_push_back (&thread_current()->childs, &t->child_elem);	/* 부모의 자식 리스트에 추가 */

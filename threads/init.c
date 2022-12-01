@@ -332,7 +332,6 @@ usage (void) {
 	power_off ();
 }
 
-
 /* Powers down the machine we're running on,
    as long as we're running on Bochs or QEMU. */
 void
